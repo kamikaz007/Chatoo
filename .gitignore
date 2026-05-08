@@ -1,0 +1,23 @@
+# Environment & Secrets
+.env
+.env.local
+.env.production
+*.env
+
+# Netlify
+.netlify/
+
+# Node
+node_modules/
+package-lock.json
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+
+# Video (too large for GitHub - use Git LFS or CDN)
+video/*.mp4

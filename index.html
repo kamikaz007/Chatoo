@@ -1,0 +1,816 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="theme-color" content="#09090b">
+  <meta name="description" content="Chatoo Ultra Pro - Web3 Social on Pi Network">
+  <title>Chatoo Ultra Pro | Web3</title>
+
+  <!-- Pi Network SDK -->
+  <script src="https://sdk.minepi.com/pi-sdk.js"></script>
+
+  <!-- Firebase -->
+  <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-firestore-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-storage-compat.js"></script>
+
+  <!-- Leaflet Map -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+  <!-- SweetAlert2 -->
+  <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+
+  <!-- App Config (must be first) -->
+  <script src="config.js"></script>
+
+  <!-- App Modules -->
+  <script src="js/ui.js"></script>
+  <script src="js/firebase-service.js"></script>
+  <script src="js/pi-auth.js"></script>
+  <script src="js/pi-payment.js"></script>
+  <script src="js/pi-wallet.js"></script>
+  <script src="js/chat.js"></script>
+  <script src="js/map.js"></script>
+
+  <style>
+    /* ── Variables ──────────────────────────────────────────── */
+    :root {
+      --primary:    #8257e5;
+      --gold:       #ffd700;
+      --dark:       #09090b;
+      --surface:    #121214;
+      --accent:     #ff4757;
+      --green:      #00ff88;
+      --glass:      rgba(255,255,255,0.05);
+      --safe-top:    env(safe-area-inset-top, 0px);
+      --safe-bottom: env(safe-area-inset-bottom, 0px);
+    }
+
+    /* ── Reset ──────────────────────────────────────────────── */
+    *, *::before, *::after {
+      box-sizing: border-box;
+      margin: 0; padding: 0;
+      -webkit-tap-highlight-color: transparent;
+      outline: none;
+    }
+
+    body, html {
+      height: 100%; width: 100%;
+      background: var(--dark);
+      color: #fff;
+      font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+      overflow: hidden;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    /* ── Background Video ───────────────────────────────────── */
+    #bg-video {
+      position: fixed; top: 50%; left: 50%;
+      min-width: 100%; min-height: 100%;
+      width: 100%; height: 100%;
+      z-index: 0;
+      transform: translate(-50%, -50%);
+      filter: brightness(0.35) saturate(0.6);
+      object-fit: cover;
+      pointer-events: none;
+    }
+
+    #bg-overlay {
+      position: fixed; inset: 0; z-index: 1;
+      background: radial-gradient(ellipse at center, transparent 0%, rgba(9,9,11,0.75) 100%);
+      pointer-events: none;
+    }
+
+    /* ── App Shell ──────────────────────────────────────────── */
+    .app-shell {
+      display: flex; flex-direction: column;
+      height: 100vh; height: 100dvh;
+      position: relative; z-index: 2;
+    }
+
+    /* ── XP Bar ─────────────────────────────────────────────── */
+    #xp-bar {
+      position: fixed; top: 0; left: 0;
+      height: 3px; width: 0%;
+      background: linear-gradient(90deg, var(--gold), #ff8c00);
+      box-shadow: 0 0 16px var(--gold);
+      z-index: 10000;
+      transition: width 1.2s cubic-bezier(0.34, 1.56, 0.64, 1);
+    }
+
+    /* ── Header ─────────────────────────────────────────────── */
+    header {
+      position: fixed; top: 0; left: 0; right: 0;
+      padding: 16px;
+      background: linear-gradient(to bottom, rgba(0,0,0,0.92), transparent);
+      display: flex; justify-content: space-between; align-items: center;
+      z-index: 700;
+      pointer-events: none;
+    }
+    header > * { pointer-events: auto; }
+
+    .header-profile {
+      display: flex; align-items: center; gap: 10px;
+      background: rgba(255,255,255,0.06);
+      backdrop-filter: blur(20px);
+      padding: 6px 14px 6px 6px;
+      border-radius: 30px;
+      border: 1px solid rgba(255,255,255,0.09);
+      cursor: pointer;
+      transition: all 0.3s ease;
+    }
+    .header-profile:hover { background: rgba(255,255,255,0.1); border-color: var(--primary); }
+
+    .header-avatar {
+      width: 34px; height: 34px;
+      border-radius: 50%; border: 2px solid var(--gold);
+      object-fit: cover;
+    }
+
+    .logo {
+      font-weight: 900; font-size: 22px; letter-spacing: 4px;
+      display: flex; align-items: center; gap: 8px;
+    }
+
+    #rpc-dot {
+      width: 10px; height: 10px;
+      background: #444; border-radius: 50%;
+      transition: 0.5s;
+    }
+    #rpc-dot.online { background: var(--green); box-shadow: 0 0 14px var(--green); }
+
+    .xp-pill {
+      background: var(--glass);
+      backdrop-filter: blur(20px);
+      padding: 8px 14px;
+      border-radius: 40px;
+      border: 1px solid rgba(255,255,255,0.1);
+      font-size: 11px; font-weight: 700;
+      display: flex; align-items: center; gap: 6px;
+      cursor: pointer;
+      transition: all 0.3s ease;
+    }
+    .xp-pill:hover { border-color: var(--gold); box-shadow: 0 0 20px rgba(255,215,0,0.15); }
+
+    /* ── Marquee ────────────────────────────────────────────── */
+    .marquee-bar {
+      position: fixed; top: 72px; left: 0; right: 0;
+      background: rgba(0,0,0,0.6);
+      backdrop-filter: blur(10px);
+      padding: 8px 0;
+      border-bottom: 1px solid rgba(255,215,0,0.12);
+      overflow: hidden; white-space: nowrap;
+      z-index: 600;
+    }
+    .marquee-inner {
+      display: inline-block;
+      animation: marqueeScroll 25s linear infinite;
+      color: var(--gold); font-size: 11px; font-weight: 600; letter-spacing: 0.5px;
+    }
+    @keyframes marqueeScroll {
+      from { transform: translateX(100vw); }
+      to   { transform: translateX(-100%); }
+    }
+
+    /* ── Radar Strip ────────────────────────────────────────── */
+    .radar-strip {
+      position: fixed; bottom: 85px; left: 0; right: 0;
+      display: flex; gap: 12px;
+      padding: 10px 16px;
+      overflow-x: auto; scrollbar-width: none;
+      z-index: 500;
+      -webkit-overflow-scrolling: touch;
+    }
+    .radar-strip::-webkit-scrollbar { display: none; }
+
+    .venue-node {
+      background: rgba(18,18,20,0.85);
+      backdrop-filter: blur(24px);
+      min-width: 165px; padding: 14px 16px;
+      border-radius: 22px;
+      border: 1px solid rgba(130,87,229,0.25);
+      box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+      flex-shrink: 0; cursor: pointer;
+      transition: all 0.3s ease;
+    }
+    .venue-node:active { border-color: var(--gold); transform: scale(0.95); }
+
+    /* ── Bottom Nav ─────────────────────────────────────────── */
+    nav {
+      position: fixed; bottom: 0; left: 0; right: 0;
+      background: rgba(5,5,5,0.97);
+      backdrop-filter: blur(24px);
+      display: flex; justify-content: space-around; align-items: center;
+      padding: 12px 8px calc(12px + var(--safe-bottom));
+      border-top: 1px solid rgba(255,255,255,0.06);
+      z-index: 2000;
+    }
+    .nav-btn {
+      font-size: 22px; opacity: 0.35;
+      transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+      cursor: pointer; padding: 8px; position: relative;
+    }
+    .nav-btn.active { opacity: 1; color: var(--gold); transform: translateY(-6px); text-shadow: 0 0 20px var(--gold); }
+    .nav-btn:active { transform: scale(0.85) translateY(-4px); }
+
+    /* ── View Modals ────────────────────────────────────────── */
+    .view-modal {
+      position: fixed; inset: 0;
+      background: var(--dark);
+      z-index: 5000;
+      display: none; flex-direction: column;
+      transform: translateY(100%);
+      transition: transform 0.5s cubic-bezier(0.19, 1, 0.22, 1);
+    }
+    .view-modal.active { display: flex; transform: translateY(0); }
+
+    /* ── Chat ───────────────────────────────────────────────── */
+    .chat-stream {
+      flex: 1; overflow-y: auto;
+      padding: 24px 18px;
+      display: flex; flex-direction: column; gap: 14px;
+      background: radial-gradient(circle at top, #16161d, #09090b);
+    }
+    .msg {
+      padding: 12px 16px; border-radius: 20px;
+      max-width: 82%; font-size: 14px; line-height: 1.55;
+      word-wrap: break-word; position: relative;
+      animation: msgPop 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.2);
+    }
+    .msg.me {
+      align-self: flex-end;
+      background: linear-gradient(135deg, var(--primary), #5d3bb3);
+      border-bottom-right-radius: 5px;
+      box-shadow: 0 6px 18px rgba(130,87,229,0.3);
+    }
+    .msg.them {
+      align-self: flex-start;
+      background: var(--surface);
+      border-bottom-left-radius: 5px;
+      border: 1px solid rgba(255,255,255,0.06);
+    }
+    @keyframes msgPop {
+      from { opacity:0; transform: scale(0.7) translateY(30px); }
+      to   { opacity:1; transform: scale(1) translateY(0); }
+    }
+
+    /* ── Back Button ────────────────────────────────────────── */
+    .back-button {
+      width: 44px; height: 44px; border-radius: 50%;
+      background: rgba(0,0,0,0.7); backdrop-filter: blur(10px);
+      border: 1px solid rgba(255,255,255,0.15);
+      color: #fff; font-size: 18px; cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+      transition: all 0.3s ease;
+    }
+    .back-button:hover { background: rgba(130,87,229,0.3); border-color: var(--primary); }
+    .back-button:active { transform: scale(0.9); }
+
+    /* ── Map ────────────────────────────────────────────────── */
+    .leaflet-control-zoom   { display: none !important; }
+    .leaflet-container      { background: #0a0a0f !important; }
+    .leaflet-popup-content-wrapper {
+      background: rgba(18,18,20,0.97) !important;
+      backdrop-filter: blur(20px) !important;
+      color: #fff !important;
+      border-radius: 16px !important;
+      border: 1px solid rgba(130,87,229,0.4) !important;
+    }
+    .leaflet-popup-tip { background: rgba(18,18,20,0.97) !important; }
+
+    .custom-map-btn {
+      width: 44px; height: 44px; border-radius: 50%;
+      background: rgba(0,0,0,0.75); backdrop-filter: blur(10px);
+      border: 1px solid rgba(255,255,255,0.15);
+      color: #fff; font-size: 20px; cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+      transition: all 0.3s ease;
+    }
+    .custom-map-btn:hover { background: rgba(130,87,229,0.3); border-color: var(--primary); }
+
+    .map-legend {
+      position: absolute; bottom: 30px; left: 16px;
+      z-index: 1000;
+      background: rgba(0,0,0,0.8); backdrop-filter: blur(16px);
+      padding: 10px 14px; border-radius: 16px; font-size: 11px;
+      border: 1px solid rgba(255,255,255,0.06);
+    }
+    .legend-dot { display:inline-block; width:8px; height:8px; border-radius:50%; margin-right:6px; }
+    .legend-dot.live   { background: var(--green);   box-shadow: 0 0 8px var(--green); }
+    .legend-dot.active { background: var(--primary); box-shadow: 0 0 8px var(--primary); }
+    .legend-dot.sync   { background: var(--gold);    box-shadow: 0 0 8px var(--gold); }
+
+    @keyframes pulseRing {
+      0%   { transform: scale(0.5); opacity: 1; }
+      100% { transform: scale(2.5); opacity: 0; }
+    }
+
+    /* ── Shop ───────────────────────────────────────────────── */
+    .shop-card {
+      background: var(--surface);
+      padding: 16px; border-radius: 18px; cursor: pointer;
+      transition: all 0.3s ease;
+      border: 1px solid rgba(255,255,255,0.04);
+      position: relative; overflow: hidden;
+    }
+    .shop-card:hover { transform: translateY(-3px); border-color: var(--primary); }
+    .shop-card:active { transform: scale(0.96); }
+
+    .shop-tab {
+      background: var(--glass); color: #fff;
+      border: 1px solid rgba(255,255,255,0.1);
+      padding: 10px 18px; border-radius: 20px;
+      font-weight: bold; cursor: pointer; white-space: nowrap;
+      transition: all 0.3s ease;
+    }
+    .shop-tab.active { background: var(--primary) !important; border-color: transparent !important; }
+
+    /* ── Scrollbar ──────────────────────────────────────────── */
+    ::-webkit-scrollbar { width: 4px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 4px; }
+
+    /* ── Responsive ─────────────────────────────────────────── */
+    @media (max-width: 380px) {
+      .venue-node { min-width: 145px; padding: 10px 12px; }
+      .msg { max-width: 90%; font-size: 13px; }
+    }
+    @media (min-width: 768px) {
+      .app-shell     { max-width: 480px; margin: 0 auto; }
+      .view-modal    { max-width: 480px; left: 50%; transform: translate(-50%, 100%); }
+      .view-modal.active { transform: translate(-50%, 0); }
+      header, nav, .marquee-bar, .radar-strip { max-width: 480px; left: 50%; transform: translateX(-50%); right: auto; width: 480px; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- Background -->
+<video autoplay muted loop playsinline id="bg-video">
+  <source src="video/background.mp4" type="video/mp4">
+</video>
+<div id="bg-overlay"></div>
+<div id="xp-bar"></div>
+
+<!-- ════════════════ APP SHELL ════════════════ -->
+<div class="app-shell">
+
+  <!-- Header -->
+  <header>
+    <!-- Sign In Button (shown when logged out) -->
+    <div id="btn-signin" class="header-profile" onclick="PiAuth.authenticate()">
+      <span style="font-size:20px;">🔐</span>
+      <span style="font-size:12px;font-weight:bold;">تسجيل الدخول</span>
+    </div>
+
+    <!-- Profile (shown when logged in) -->
+    <div id="header-profile" class="header-profile" onclick="App.route('profile')" style="display:none;">
+      <img id="header-avatar" class="header-avatar" src="https://via.placeholder.com/150" alt="">
+      <span id="header-username" style="font-size:11px;font-weight:800;letter-spacing:0.5px;">VOYAGER</span>
+    </div>
+
+    <!-- Logo -->
+    <div class="logo">
+      <div id="rpc-dot"></div>
+      CHATOO
+    </div>
+
+    <!-- XP Pill -->
+    <div class="xp-pill" onclick="App.route('shop')">
+      ✨ <span id="xp-display">0</span>
+    </div>
+  </header>
+
+  <!-- Marquee -->
+  <div class="marquee-bar">
+    <span class="marquee-inner" id="marquee-text">جاري تحميل الأماكن القريبة...</span>
+  </div>
+
+  <!-- Radar Strip -->
+  <div class="radar-strip" id="radar-list"></div>
+
+  <!-- Bottom Nav -->
+  <nav>
+    <div class="nav-btn active" title="الخريطة"     onclick="App.route('map')">📍</div>
+    <div class="nav-btn"        title="المتجر"       onclick="App.route('shop')">🎁</div>
+    <div class="nav-btn"        title="الملف"        onclick="App.route('profile')">👤</div>
+    <div class="nav-btn"        title="إرسال Pi"     onclick="PiPayment.renderTransferModal()">💸</div>
+    <div class="nav-btn"        title="المحفظة"      onclick="PiWallet.open()">💳</div>
+    <div class="nav-btn"        title="الإعدادات"    onclick="App.openSettings()">⚙️</div>
+  </nav>
+</div>
+
+<!-- ════════════════ MODAL: MAP ════════════════ -->
+<div id="modal-map" class="view-modal">
+  <div id="map-container" style="width:100%;height:100%;position:relative;">
+    <button class="back-button" onclick="App.goHome()" style="position:absolute;top:20px;left:20px;z-index:1000;">✕</button>
+    <div style="position:absolute;top:20px;right:20px;z-index:1000;display:flex;gap:8px;flex-direction:column;">
+      <button class="custom-map-btn" onclick="ChatooMap.zoomIn()">＋</button>
+      <button class="custom-map-btn" onclick="ChatooMap.zoomOut()">－</button>
+      <button class="custom-map-btn" onclick="ChatooMap.locateMe()">📍</button>
+      <button class="custom-map-btn" onclick="ChatooMap.toggleLayer()" id="layer-toggle-btn">🛰️</button>
+    </div>
+  </div>
+</div>
+
+<!-- ════════════════ MODAL: CHAT ════════════════ -->
+<div id="modal-chat" class="view-modal">
+  <!-- Chat Header -->
+  <div style="background:linear-gradient(135deg,#1a0a3e,#0a0a1e);padding:20px;display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid rgba(255,255,255,0.06);">
+    <button class="back-button" onclick="ChatooChat.close()">✕</button>
+    <div style="text-align:center;">
+      <b id="chat-venue-name" style="font-size:16px;">—</b>
+      <br><small style="opacity:0.5;font-size:11px;">غرفة دردشة حية</small>
+    </div>
+    <button onclick="PiPayment.renderTransferModal()" style="background:rgba(255,215,0,0.1);border:1px solid rgba(255,215,0,0.2);color:var(--gold);padding:8px 12px;border-radius:20px;cursor:pointer;font-size:12px;font-weight:bold;">💸 Pi</button>
+  </div>
+
+  <!-- Messages -->
+  <div class="chat-stream" id="chat-flow"></div>
+
+  <!-- Input Bar -->
+  <div style="padding:14px 16px;background:#0c0c0e;display:flex;gap:10px;align-items:center;border-top:1px solid var(--glass);">
+    <div onclick="document.getElementById('file-input').click()" style="font-size:24px;cursor:pointer;opacity:0.7;transition:opacity 0.2s;" onmouseover="this.style.opacity=1" onmouseout="this.style.opacity=0.7">🖼️</div>
+    <input type="file" id="file-input" hidden accept="image/*" onchange="ChatooChat.handleFileUpload(this)">
+    <div style="flex:1;background:#1a1a1d;border-radius:30px;display:flex;align-items:center;padding:0 14px;border:1px solid rgba(255,255,255,0.06);">
+      <input type="text" id="chat-input" placeholder="اكتب رسالة..." onkeydown="ChatooChat.sendOnEnter(event)"
+        style="flex:1;background:none;border:none;padding:12px 0;color:#fff;direction:rtl;font-size:14px;">
+      <span id="mic-icon" onclick="ChatooChat.toggleVoiceNote()" style="font-size:20px;cursor:pointer;opacity:0.7;">🎤</span>
+    </div>
+    <button onclick="ChatooChat.sendMessage()" style="background:var(--gold);border:none;width:44px;height:44px;border-radius:50%;font-size:18px;cursor:pointer;color:#000;flex-shrink:0;">➔</button>
+  </div>
+</div>
+
+<!-- ════════════════ MODAL: SHOP ════════════════ -->
+<div id="modal-shop" class="view-modal">
+  <div style="height:100%;overflow-y:auto;padding:24px 20px;">
+
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:24px;">
+      <div>
+        <h1 style="margin:0;font-size:26px;">💎 Web3 Shop</h1>
+        <small style="opacity:0.5;">Marketplace · NFTs · Rewards</small>
+      </div>
+      <button class="back-button" onclick="App.goHome()">✕</button>
+    </div>
+
+    <!-- Balance Card -->
+    <div style="background:linear-gradient(135deg,#1a1a2e,#16213e);border-radius:20px;padding:20px;margin-bottom:20px;border:1px solid rgba(255,215,0,0.15);">
+      <div style="display:flex;justify-content:space-between;align-items:center;">
+        <div>
+          <small style="opacity:0.5;">💰 رصيد XP</small>
+          <h2 id="shop-xp" style="margin:4px 0;color:var(--gold);">0</h2>
+        </div>
+        <div style="text-align:right;">
+          <small style="opacity:0.5;">🏆 الرتبة</small>
+          <h3 id="shop-rank" style="margin:4px 0;color:var(--primary);">VOYAGER</h3>
+        </div>
+      </div>
+      <button onclick="App.claimDaily()"
+        style="width:100%;margin-top:14px;background:linear-gradient(90deg,var(--gold),#ff8c00);border:none;color:#000;padding:14px;border-radius:16px;font-weight:900;font-size:15px;cursor:pointer;">
+        🎁 المكافأة اليومية
+      </button>
+    </div>
+
+    <!-- Shop Tabs -->
+    <div style="display:flex;gap:8px;margin-bottom:20px;overflow-x:auto;scrollbar-width:none;">
+      <button class="shop-tab active" onclick="App.shopTab(this,'items')">🛍️ المتجر</button>
+      <button class="shop-tab"        onclick="App.shopTab(this,'nfts')">🖼️ NFTs</button>
+      <button class="shop-tab"        onclick="App.shopTab(this,'history')">📜 السجل</button>
+    </div>
+
+    <!-- Items Grid -->
+    <div id="shop-items" style="display:grid;grid-template-columns:1fr 1fr;gap:14px;">
+      <!-- populated by JS -->
+    </div>
+
+    <!-- NFTs Grid -->
+    <div id="shop-nfts" style="display:none;grid-template-columns:1fr 1fr;gap:14px;">
+      <!-- populated by JS -->
+    </div>
+
+    <!-- History -->
+    <div id="shop-history" style="display:none;">
+      <div id="purchase-list">
+        <p style="opacity:0.4;text-align:center;padding:20px;">لا توجد مشتريات بعد</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ════════════════ MODAL: PROFILE ════════════════ -->
+<div id="modal-profile" class="view-modal">
+  <div style="height:100%;overflow-y:auto;padding:40px 24px;text-align:center;">
+
+    <div style="display:flex;justify-content:space-between;align-items:center;">
+      <button class="back-button" onclick="App.goHome()">✕</button>
+      <b style="font-size:16px;">الملف الشخصي</b>
+      <span style="width:44px;"></span>
+    </div>
+
+    <!-- Avatar Ring -->
+    <div style="width:120px;height:120px;border-radius:50%;margin:30px auto;padding:4px;background:conic-gradient(var(--gold) 75%, #333 0);">
+      <img id="profile-avatar" src="https://via.placeholder.com/150"
+        style="width:100%;height:100%;border-radius:50%;border:5px solid var(--dark);object-fit:cover;">
+    </div>
+
+    <h2 id="profile-name">@voyager</h2>
+
+    <div id="profile-xp" style="font-size:42px;font-weight:900;color:var(--gold);margin:8px 0;">0</div>
+    <p style="opacity:0.45;font-size:13px;">Total Experience Points</p>
+
+    <!-- Rank Badge -->
+    <div id="profile-rank-badge" style="display:inline-block;background:linear-gradient(90deg,var(--primary),#5d3bb3);padding:8px 20px;border-radius:30px;font-weight:900;font-size:13px;letter-spacing:1px;margin:16px 0;">
+      ORIGIN VOYAGER
+    </div>
+
+    <!-- Stats Row -->
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin:20px 0;">
+      <div style="background:var(--surface);border-radius:16px;padding:14px;">
+        <div style="font-size:22px;font-weight:900;color:var(--gold);" id="stat-messages">0</div>
+        <div style="font-size:10px;opacity:0.5;">رسائل</div>
+      </div>
+      <div style="background:var(--surface);border-radius:16px;padding:14px;">
+        <div style="font-size:22px;font-weight:900;color:var(--green);" id="stat-checkins">0</div>
+        <div style="font-size:10px;opacity:0.5;">زيارات</div>
+      </div>
+      <div style="background:var(--surface);border-radius:16px;padding:14px;">
+        <div style="font-size:22px;font-weight:900;color:var(--primary);" id="stat-referrals">0</div>
+        <div style="font-size:10px;opacity:0.5;">إحالات</div>
+      </div>
+    </div>
+
+    <!-- Inventory -->
+    <div id="inventory-section" style="margin:20px 0;"></div>
+
+    <!-- Referral Code -->
+    <div style="background:var(--surface);border-radius:18px;padding:18px;margin:20px 0;">
+      <p style="opacity:0.5;font-size:12px;margin-bottom:8px;">رمز الإحالة الخاص بك</p>
+      <div style="display:flex;justify-content:space-between;align-items:center;">
+        <code id="referral-code" style="font-size:16px;color:var(--gold);letter-spacing:2px;">—</code>
+        <button onclick="App.copyReferral()" style="background:rgba(255,215,0,0.1);border:1px solid rgba(255,215,0,0.3);color:var(--gold);padding:8px 14px;border-radius:20px;cursor:pointer;font-size:12px;">نسخ 📋</button>
+      </div>
+    </div>
+
+    <button onclick="App.logout()"
+      style="margin-top:10px;color:var(--accent);background:none;border:none;font-weight:bold;cursor:pointer;font-size:14px;">
+      ⏻ تسجيل الخروج
+    </button>
+  </div>
+</div>
+
+<!-- ════════════════ MAIN APP CONTROLLER ════════════════ -->
+<script>
+const App = (() => {
+
+  // ── State ──────────────────────────────────────────────────
+  const state = {
+    uid:      localStorage.getItem("chatoo_uid") || null,
+    xp:       parseInt(localStorage.getItem("chatoo_xp")) || 0,
+    username: localStorage.getItem("chatoo_pi_username") || "voyager",
+    piReady:  false,
+    inventory: JSON.parse(localStorage.getItem("chatoo_inventory") || "[]")
+  };
+
+  // ── Init ───────────────────────────────────────────────────
+  async function init() {
+    FirebaseService.init();
+    updateXPUI();
+    watchPiSDK();
+
+    // Restore session if logged in
+    if (state.uid) {
+      const user = await FirebaseService.getUser(state.uid).catch(() => null);
+      if (user) {
+        showLoggedInUI(user.username || state.username);
+        loadProfileStats(user);
+      }
+    }
+
+    renderShop();
+    console.log("✅ Chatoo Ultra Pro v3.0.0 — Kamikaz007");
+  }
+
+  // ── Pi SDK watcher ─────────────────────────────────────────
+  function watchPiSDK() {
+    let attempts = 0;
+    const check = setInterval(() => {
+      attempts++;
+      if (window.Pi) {
+        clearInterval(check);
+        state.piReady = true;
+        document.getElementById("rpc-dot").classList.add("online");
+        PiAuth.init();
+        ChatooUI.toast("Pi Network Testnet متصل 🔵", "success");
+      }
+      if (attempts > 40) clearInterval(check);
+    }, 500);
+  }
+
+  // ── UI helpers ─────────────────────────────────────────────
+  function showLoggedInUI(username) {
+    document.getElementById("btn-signin").style.display = "none";
+    document.getElementById("header-profile").style.display = "flex";
+    document.getElementById("header-username").textContent = username.toUpperCase();
+    document.getElementById("header-avatar").src = `https://minepi.com/api/v2/users/${username}/avatar`;
+    document.getElementById("profile-name").textContent = "@" + username;
+    document.getElementById("referral-code").textContent = "CHATOO_" + username.slice(0,6).toUpperCase();
+  }
+
+  function loadProfileStats(user) {
+    document.getElementById("profile-xp").textContent = user.xp || 0;
+    document.getElementById("stat-messages").textContent = user.stats?.messages || 0;
+    document.getElementById("stat-checkins").textContent = user.stats?.checkins || 0;
+    document.getElementById("stat-referrals").textContent = user.stats?.referrals || 0;
+    updateXPUI(user.xp || state.xp);
+  }
+
+  function updateXPUI(xp) {
+    const val = xp !== undefined ? xp : state.xp;
+    document.getElementById("xp-display").textContent = val;
+    const shopXp = document.getElementById("shop-xp");
+    if (shopXp) shopXp.textContent = val;
+    // XP bar: max 10000 xp = 100%
+    document.getElementById("xp-bar").style.width = Math.min(val / 10000 * 100, 100) + "%";
+  }
+
+  // ── Routing ────────────────────────────────────────────────
+  function route(view) {
+    document.querySelectorAll(".view-modal").forEach(m => m.classList.remove("active"));
+    document.querySelectorAll(".nav-btn").forEach(b => b.classList.remove("active"));
+
+    const modal = document.getElementById("modal-" + view);
+    if (modal) modal.classList.add("active");
+
+    const idx = { map: 0, shop: 1, profile: 2 }[view];
+    if (idx !== undefined) {
+      document.querySelectorAll(".nav-btn")[idx]?.classList.add("active");
+    }
+
+    if (view === "map")  setTimeout(() => ChatooMap.init(), 200);
+    if (view === "shop") renderShop();
+    if (view === "profile" && state.uid) {
+      FirebaseService.getUser(state.uid).then(u => { if (u) loadProfileStats(u); }).catch(() => {});
+    }
+  }
+
+  function goHome() {
+    document.querySelectorAll(".view-modal").forEach(m => m.classList.remove("active"));
+    document.querySelectorAll(".nav-btn").forEach(b => b.classList.remove("active"));
+    document.querySelectorAll(".nav-btn")[0]?.classList.add("active");
+  }
+
+  // ── Shop ───────────────────────────────────────────────────
+  const SHOP_ITEMS = [
+    { id: "vip",     emoji: "👑", name: "VIP Badge",      price: 500,  pi: null,   desc: "شارة VIP حصرية" },
+    { id: "boost",   emoji: "⚡", name: "XP Booster",     price: 300,  pi: null,   desc: "ضاعف XP لـ 24 ساعة" },
+    { id: "frame",   emoji: "🖼️", name: "Gold Frame",     price: 200,  pi: null,   desc: "إطار ذهبي للصورة" },
+    { id: "sticker", emoji: "🌟", name: "Star Pack",       price: 150,  pi: null,   desc: "حزمة ملصقات نجوم" },
+    { id: "theme",   emoji: "🎨", name: "Dark Cosmos",    price: 0,    pi: 1,      desc: "ثيم كوني حصري — 1 π" },
+    { id: "premium", emoji: "💎", name: "Premium Month",  price: 0,    pi: 3,      desc: "عضوية بريميوم شهر — 3 π" },
+  ];
+
+  const NFTS = [
+    { id: "nft1", emoji: "🐉", name: "Dragon #001",  pi: 5,  rare: "Legendary" },
+    { id: "nft2", emoji: "🌌", name: "Galaxy #042", pi: 2,  rare: "Epic"      },
+    { id: "nft3", emoji: "⚔️", name: "Sword #007",  pi: 1,  rare: "Rare"      },
+    { id: "nft4", emoji: "🔮", name: "Orb #099",    pi: 0.5, rare: "Common"   },
+  ];
+
+  function renderShop() {
+    const grid = document.getElementById("shop-items");
+    if (!grid) return;
+    grid.innerHTML = SHOP_ITEMS.map(item => `
+      <div class="shop-card" onclick="App.buyItem('${item.id}')">
+        <div style="font-size:32px;margin-bottom:8px;">${item.emoji}</div>
+        <b style="font-size:13px;">${item.name}</b>
+        <p style="font-size:11px;opacity:0.5;margin:4px 0 10px;">${item.desc}</p>
+        <div style="background:${item.pi ? "linear-gradient(90deg,var(--gold),#ff8c00)" : "var(--primary)"};
+          padding:7px 12px;border-radius:20px;text-align:center;font-weight:900;font-size:12px;color:${item.pi?"#000":"#fff"};">
+          ${item.pi ? `${item.pi} π` : `${item.price} XP`}
+        </div>
+      </div>
+    `).join("");
+
+    const nftGrid = document.getElementById("shop-nfts");
+    if (nftGrid) {
+      nftGrid.innerHTML = NFTS.map(n => `
+        <div class="shop-card" style="border:1px solid rgba(255,215,0,0.2);animation:nftPulse 3s infinite alternate;" onclick="App.buyNFT('${n.id}')">
+          <div style="font-size:40px;margin-bottom:8px;">${n.emoji}</div>
+          <b style="font-size:13px;">${n.name}</b>
+          <div style="font-size:10px;color:var(--gold);margin:4px 0 10px;">${n.rare}</div>
+          <div style="background:linear-gradient(90deg,var(--gold),#ff8c00);padding:7px 12px;border-radius:20px;text-align:center;font-weight:900;font-size:12px;color:#000;">
+            ${n.pi} π
+          </div>
+        </div>
+      `).join("");
+    }
+  }
+
+  async function buyItem(id) {
+    const item = SHOP_ITEMS.find(i => i.id === id);
+    if (!item) return;
+
+    if (item.pi) {
+      // Pay with Pi
+      PiPayment.pay({
+        amount: item.pi, memo: `Chatoo Shop: ${item.name}`,
+        metadata: { itemId: id, type: "shop" },
+        onSuccess: () => {
+          state.inventory.push({ id, ...item, ts: Date.now() });
+          localStorage.setItem("chatoo_inventory", JSON.stringify(state.inventory));
+          ChatooUI.toast(`تم شراء ${item.name} ✓`, "success");
+        }
+      });
+    } else {
+      // Pay with XP
+      if (state.xp < item.price) return ChatooUI.toast("رصيد XP غير كافٍ", "warn");
+      state.xp -= item.price;
+      updateXPUI();
+      localStorage.setItem("chatoo_xp", state.xp);
+      if (state.uid) FirebaseService.addXP(state.uid, -item.price, "purchase_" + id);
+      state.inventory.push({ id, ...item, ts: Date.now() });
+      localStorage.setItem("chatoo_inventory", JSON.stringify(state.inventory));
+      ChatooUI.toast(`تم شراء ${item.name} ✓`, "success");
+    }
+  }
+
+  async function buyNFT(id) {
+    const nft = NFTS.find(n => n.id === id);
+    if (!nft) return;
+    PiPayment.pay({
+      amount: nft.pi, memo: `Chatoo NFT: ${nft.name}`,
+      metadata: { nftId: id, type: "nft" },
+      onSuccess: () => ChatooUI.toast(`NFT ${nft.name} لك الآن! 🎉`, "success")
+    });
+  }
+
+  function shopTab(btn, tab) {
+    document.querySelectorAll(".shop-tab").forEach(t => t.classList.remove("active"));
+    btn.classList.add("active");
+    document.getElementById("shop-items").style.display   = tab === "items"   ? "grid" : "none";
+    document.getElementById("shop-nfts").style.display    = tab === "nfts"    ? "grid" : "none";
+    document.getElementById("shop-history").style.display = tab === "history" ? "block": "none";
+  }
+
+  // ── Daily Reward ──────────────────────────────────────────
+  async function claimDaily() {
+    if (!state.uid) return ChatooUI.toast("سجل دخولك أولاً", "warn");
+    const gained = await FirebaseService.claimDailyReward(state.uid);
+    if (gained === -1) return ChatooUI.toast("تم المطالبة بالمكافأة اليوم بالفعل ✓", "warn");
+    state.xp += gained;
+    updateXPUI();
+    localStorage.setItem("chatoo_xp", state.xp);
+    ChatooUI.animateXP(gained);
+    ChatooUI.toast(`+${gained} XP — مكافأة يومية 🎁`, "success");
+  }
+
+  // ── Profile helpers ────────────────────────────────────────
+  function copyReferral() {
+    const code = document.getElementById("referral-code")?.textContent;
+    if (code) navigator.clipboard.writeText(code).then(() => ChatooUI.toast("تم نسخ الرمز ✓", "success"));
+  }
+
+  function logout() {
+    ChatooUI.confirm("تسجيل الخروج", "هل تريد تسجيل الخروج؟", () => {
+      localStorage.clear();
+      location.reload();
+    });
+  }
+
+  function openSettings() {
+    Swal.fire({
+      title: "⚙️ الإعدادات",
+      html: `
+        <div style="text-align:right;direction:rtl;">
+          <p style="margin-bottom:8px;opacity:0.7;">الإصدار: 3.0.0</p>
+          <p style="margin-bottom:8px;opacity:0.7;">الشبكة: Pi Testnet</p>
+          <p style="margin-bottom:8px;opacity:0.7;">بناها: Kamikaz007</p>
+          <p style="margin-bottom:8px;opacity:0.7;">Firebase: chatoo-4566f</p>
+        </div>
+      `,
+      background: "#121214", color: "#fff",
+      confirmButtonColor: "var(--primary)",
+      confirmButtonText: "حسناً"
+    });
+  }
+
+  return { init, route, goHome, updateXPUI, showLoggedInUI, loadProfileStats, renderShop, buyItem, buyNFT, shopTab, claimDaily, copyReferral, logout, openSettings };
+})();
+
+// ── Boot ────────────────────────────────────────────────────
+window.addEventListener("load", () => App.init());
+</script>
+
+<style>
+  @keyframes nftPulse {
+    from { border-color: rgba(255,215,0,0.15); box-shadow: 0 0 10px rgba(255,215,0,0.05); }
+    to   { border-color: rgba(255,215,0,0.4);  box-shadow: 0 0 25px rgba(255,215,0,0.15); }
+  }
+</style>
+
+</body>
+</html>
