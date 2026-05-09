@@ -21,3 +21,4 @@ Thumbs.db
 
 # Video (too large for GitHub - use Git LFS or CDN)
 video/*.mp4
+.env
