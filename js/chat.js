@@ -14,6 +14,12 @@ window.ChatooChat = (() => {
     document.getElementById("chat-venue-name").textContent = venueName;
     document.getElementById("modal-chat").classList.add("active");
     listenMessages();
+    // Show check-in button if logged in
+    const uid = localStorage.getItem("chatoo_uid");
+    const checkInBtn = document.getElementById("chat-checkin-btn");
+    if (checkInBtn) {
+      checkInBtn.style.display = uid ? "inline-flex" : "none";
+    }
   }
 
   function close() {
@@ -70,6 +76,19 @@ window.ChatooChat = (() => {
     if (uid) {
       FirebaseService.addXP(uid, CHATOO_CONFIG.xp.sendMessage, "message_sent");
       ChatooUI.animateXP(CHATOO_CONFIG.xp.sendMessage);
+
+      // Increment message count for social butterfly
+      FirebaseService.incrementMessageCount(uid);
+
+      // Check night owl: between 00:00 and 05:00
+      const hour = new Date().getHours();
+      if (hour >= 0 && hour < 5) {
+        const result = await FirebaseService.unlockAchievement(uid, "nightOwl");
+        if (result) {
+          ChatooUI.toast(`🦉 لقد حصلت على لقب "${result.title}"! +${result.xp} XP`, "success");
+          if (window.updateXPUI) window.updateXPUI(); // refresh XP display via global function
+        }
+      }
     }
   }
 
@@ -132,6 +151,22 @@ window.ChatooChat = (() => {
     if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(); }
   }
 
+  async function checkIn() {
+    const uid = localStorage.getItem("chatoo_uid");
+    if (!uid || !currentRoom) return;
+    const venueName = document.getElementById("chat-venue-name").textContent;
+    if (venueName === "—") return;
+
+    const success = await FirebaseService.checkInVenue(uid, venueName);
+    if (success) {
+      ChatooUI.toast(`📍 سجلت حضورك في ${venueName} +${CHATOO_CONFIG.xp.checkIn} XP`, "success");
+      ChatooUI.animateXP(CHATOO_CONFIG.xp.checkIn);
+      if (window.updateXPUI) window.updateXPUI();
+    } else {
+      ChatooUI.toast("لقد سجلت حضورك هنا من قبل", "info");
+    }
+  }
+
   function escapeHtml(s) {
     return s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
   }
@@ -142,5 +177,5 @@ window.ChatooChat = (() => {
     return d.toLocaleTimeString("ar", { hour: "2-digit", minute: "2-digit" });
   }
 
-  return { open, close, sendMessage, handleFileUpload, toggleVoiceNote, sendOnEnter };
+  return { open, close, sendMessage, handleFileUpload, toggleVoiceNote, sendOnEnter, checkIn };
 })();

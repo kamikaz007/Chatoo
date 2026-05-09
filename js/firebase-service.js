@@ -73,7 +73,7 @@ window.FirebaseService = (() => {
   }
 
   // ── Venues ────────────────────────────────────────────────
-  async function getVenues(lat, lon, radiusKm = 50) {
+  async function getVenues() {
     if (!db) return [];
     const snap = await db.collection("venues").limit(30).get();
     return snap.docs.map(d => ({ id: d.id, ...d.data() }));
@@ -137,5 +137,101 @@ window.FirebaseService = (() => {
     return CHATOO_CONFIG.xp.dailyLogin;
   }
 
-  return { init, saveUser, getUser, watchUser, addXP, sendMessage, watchMessages, getVenues, saveVenue, savePiTransaction, getUserTransactions, uploadImage, canClaimDaily, claimDailyReward };
+  // ── Achievements & Titles ─────────────────────────────────
+  async function unlockAchievement(uid, achievementId) {
+    if (!db) return false;
+    const ref = db.collection("users").doc(uid);
+    const userDoc = await ref.get();
+    if (!userDoc.exists) return false;
+
+    const userData = userDoc.data();
+    const achievements = userData.achievements || {};
+    if (achievements[achievementId]) return false; // Already unlocked
+
+    const achievement = CHATOO_CONFIG.achievements[achievementId];
+    if (!achievement) return false;
+
+    const updatedAchievements = { ...achievements, [achievementId]: true };
+    const titles = userData.titles || [];
+    if (!titles.includes(achievement.title)) {
+      titles.push(achievement.title);
+    }
+
+    await ref.set({
+      achievements: updatedAchievements,
+      titles: titles
+    }, { merge: true });
+
+    // Award XP
+    await addXP(uid, achievement.xp, `achievement_${achievementId}`);
+
+    return { title: achievement.title, xp: achievement.xp };
+  }
+
+  async function getAchievements(uid) {
+    if (!db) return {};
+    const doc = await db.collection("users").doc(uid).get();
+    return doc.exists ? (doc.data().achievements || {}) : {};
+  }
+
+  async function getTitles(uid) {
+    if (!db) return [];
+    const doc = await db.collection("users").doc(uid).get();
+    return doc.exists ? (doc.data().titles || []) : [];
+  }
+
+  // ── Venue Visits ──────────────────────────────────────────
+  async function checkInVenue(uid, venueName) {
+    if (!db) return false;
+    const ref = db.collection("users").doc(uid);
+    const userDoc = await ref.get();
+    if (!userDoc.exists) return false;
+
+    const userData = userDoc.data();
+    const visited = userData.visitedVenues || [];
+    if (visited.includes(venueName)) return false; // Already visited
+
+    const newVisited = [...visited, venueName];
+    await ref.set({ visitedVenues: newVisited }, { merge: true });
+
+    // Award XP for check-in
+    await addXP(uid, CHATOO_CONFIG.xp.checkIn, `checkin_${venueName}`);
+
+    // Check explorer achievement (3 unique venues)
+    if (newVisited.length >= 3) {
+      await unlockAchievement(uid, "explorer");
+    }
+
+    // Check check-in king (10 check-ins)
+    const totalCheckins = (userData.totalCheckins || 0) + 1;
+    await ref.set({ totalCheckins }, { merge: true });
+    if (totalCheckins >= 10) {
+      await unlockAchievement(uid, "checkInKing");
+    }
+
+    return true;
+  }
+
+  async function getVisitedVenues(uid) {
+    if (!db) return [];
+    const doc = await db.collection("users").doc(uid).get();
+    return doc.exists ? (doc.data().visitedVenues || []) : [];
+  }
+
+  // ── Message Count (for socialButterfly) ───────────────────
+  async function incrementMessageCount(uid) {
+    if (!db) return;
+    const ref = db.collection("users").doc(uid);
+    const userDoc = await ref.get();
+    if (!userDoc.exists) return;
+
+    const count = (userDoc.data().messageCount || 0) + 1;
+    await ref.set({ messageCount: count }, { merge: true });
+
+    if (count >= 100) {
+      await unlockAchievement(uid, "socialButterfly");
+    }
+  }
+
+  return { init, saveUser, getUser, watchUser, addXP, sendMessage, watchMessages, getVenues, saveVenue, savePiTransaction, getUserTransactions, uploadImage, canClaimDaily, claimDailyReward, unlockAchievement, getAchievements, getTitles, checkInVenue, getVisitedVenues, incrementMessageCount };
 })();

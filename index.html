@@ -85,6 +85,60 @@
       pointer-events: none;
     }
 
+    /* ── Floating Venue Bubbles ─────────────────────────────── */
+    #floating-bubbles {
+      position: fixed; inset: 0; z-index: 3;
+      pointer-events: none;
+    }
+
+    .float-bubble {
+      position: absolute;
+      width: 60px; height: 60px;
+      border-radius: 50%;
+      background: rgba(18,18,20,0.75);
+      backdrop-filter: blur(10px);
+      border: 1px solid rgba(130,87,229,0.3);
+      display: flex; align-items: center; justify-content: center;
+      flex-direction: column;
+      font-size: 20px;
+      box-shadow: 0 0 20px rgba(130,87,229,0.1);
+      cursor: pointer;
+      pointer-events: auto;
+      animation: floatBubble 20s infinite alternate ease-in-out;
+      transition: transform 0.3s, box-shadow 0.3s;
+      white-space: nowrap;
+    }
+
+    .float-bubble:hover {
+      transform: scale(1.1);
+      box-shadow: 0 0 30px var(--primary);
+      border-color: var(--gold);
+    }
+
+    .float-bubble .bubble-emoji {
+      font-size: 22px;
+      line-height: 1;
+    }
+
+    .float-bubble .bubble-name {
+      font-size: 8px;
+      font-weight: bold;
+      color: #fff;
+      text-shadow: 0 0 6px black;
+      margin-top: 2px;
+      max-width: 50px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    @keyframes floatBubble {
+      0%   { transform: translate(0, 0) scale(0.9); opacity: 0.8; }
+      25%  { transform: translate(15px, -25px) scale(1.05); opacity: 1; }
+      50%  { transform: translate(-10px, 15px) scale(0.95); opacity: 0.9; }
+      75%  { transform: translate(-20px, -10px) scale(1.02); opacity: 0.85; }
+      100% { transform: translate(10px, 20px) scale(0.98); opacity: 0.75; }
+    }
+
     /* ── App Shell ──────────────────────────────────────────── */
     .app-shell {
       display: flex; flex-direction: column;
@@ -270,6 +324,21 @@
     .back-button:hover { background: rgba(130,87,229,0.3); border-color: var(--primary); }
     .back-button:active { transform: scale(0.9); }
 
+    /* ── Check-in Button ────────────────────────────────────── */
+    .checkin-btn {
+      background: rgba(0,255,136,0.1);
+      border: 1px solid rgba(0,255,136,0.15);
+      color: var(--green);
+      padding: 6px 12px;
+      border-radius: 20px;
+      cursor: pointer;
+      font-size: 11px;
+      font-weight: bold;
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+    }
+
     /* ── Map ────────────────────────────────────────────────── */
     .leaflet-control-zoom   { display: none !important; }
     .leaflet-container      { background: #0a0a0f !important; }
@@ -356,6 +425,9 @@
 <div id="bg-overlay"></div>
 <div id="xp-bar"></div>
 
+<!-- ════════════════ FLOATING VENUE BUBBLES ════════════════ -->
+<div id="floating-bubbles"></div>
+
 <!-- ════════════════ APP SHELL ════════════════ -->
 <div class="app-shell">
 
@@ -426,7 +498,12 @@
       <b id="chat-venue-name" style="font-size:16px;">—</b>
       <br><small style="opacity:0.5;font-size:11px;">غرفة دردشة حية</small>
     </div>
-    <button onclick="PiPayment.renderTransferModal()" style="background:rgba(255,215,0,0.1);border:1px solid rgba(255,215,0,0.2);color:var(--gold);padding:8px 12px;border-radius:20px;cursor:pointer;font-size:12px;font-weight:bold;">💸 Pi</button>
+    <div style="display:flex; gap:6px;">
+      <button id="chat-checkin-btn" class="checkin-btn" onclick="ChatooChat.checkIn()" style="display:none;">
+        📍 تسجيل حضور
+      </button>
+      <button onclick="PiPayment.renderTransferModal()" style="background:rgba(255,215,0,0.1);border:1px solid rgba(255,215,0,0.2);color:var(--gold);padding:8px 12px;border-radius:20px;cursor:pointer;font-size:12px;font-weight:bold;">💸 Pi</button>
+    </div>
   </div>
 
   <!-- Messages -->
@@ -527,6 +604,9 @@
       ORIGIN VOYAGER
     </div>
 
+    <!-- Achievements / Titles -->
+    <div id="profile-achievements" style="margin:20px 0;"></div>
+
     <!-- Stats Row -->
     <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin:20px 0;">
       <div style="background:var(--surface);border-radius:16px;padding:14px;">
@@ -572,7 +652,9 @@ const App = (() => {
     xp:       parseInt(localStorage.getItem("chatoo_xp")) || 0,
     username: localStorage.getItem("chatoo_pi_username") || "voyager",
     piReady:  false,
-    inventory: JSON.parse(localStorage.getItem("chatoo_inventory") || "[]")
+    inventory: JSON.parse(localStorage.getItem("chatoo_inventory") || "[]"),
+    titles: [],
+    achievements: {}
   };
 
   // ── Init ───────────────────────────────────────────────────
@@ -587,10 +669,15 @@ const App = (() => {
       if (user) {
         showLoggedInUI(user.username || state.username);
         loadProfileStats(user);
+        // Load achievements & titles
+        state.achievements = await FirebaseService.getAchievements(state.uid);
+        state.titles = await FirebaseService.getTitles(state.uid);
+        renderProfileAchievements();
       }
     }
 
     renderShop();
+    renderFloatingVenues();
     console.log("✅ Chatoo Ultra Pro v3.0.0 — Kamikaz007");
   }
 
@@ -620,12 +707,18 @@ const App = (() => {
     document.getElementById("referral-code").textContent = "CHATOO_" + username.slice(0,6).toUpperCase();
   }
 
-  function loadProfileStats(user) {
+  async function loadProfileStats(user) {
     document.getElementById("profile-xp").textContent = user.xp || 0;
     document.getElementById("stat-messages").textContent = user.stats?.messages || 0;
-    document.getElementById("stat-checkins").textContent = user.stats?.checkins || 0;
+    document.getElementById("stat-checkins").textContent = user.totalCheckins || user.stats?.checkins || 0;
     document.getElementById("stat-referrals").textContent = user.stats?.referrals || 0;
     updateXPUI(user.xp || state.xp);
+    // Update titles from user if not already loaded
+    if (user.titles) {
+      state.titles = user.titles;
+      state.achievements = user.achievements || {};
+      renderProfileAchievements();
+    }
   }
 
   function updateXPUI(xp) {
@@ -633,8 +726,35 @@ const App = (() => {
     document.getElementById("xp-display").textContent = val;
     const shopXp = document.getElementById("shop-xp");
     if (shopXp) shopXp.textContent = val;
-    // XP bar: max 10000 xp = 100%
     document.getElementById("xp-bar").style.width = Math.min(val / 10000 * 100, 100) + "%";
+    // Also update local state if xp passed
+    if (xp !== undefined) state.xp = xp;
+  }
+
+  function renderProfileAchievements() {
+    const container = document.getElementById("profile-achievements");
+    if (!container) return;
+    const unlocked = Object.values(CHATOO_CONFIG.achievements).filter(a => state.achievements[a.id]);
+    const locked = Object.values(CHATOO_CONFIG.achievements).filter(a => !state.achievements[a.id]);
+
+    let html = '';
+    if (unlocked.length > 0) {
+      html += '<div style="margin-bottom: 12px;"><b style="color:var(--gold);">🏆 الألقاب التي حصلت عليها</b></div>';
+      html += '<div style="display:flex;flex-wrap:wrap;gap:8px;justify-content:center;">';
+      unlocked.forEach(a => {
+        html += `<div style="background:linear-gradient(135deg, var(--primary), #5d3bb3); padding:6px 12px; border-radius:20px; font-size:12px; font-weight:bold;">${a.icon} ${a.title}</div>`;
+      });
+      html += '</div>';
+    }
+    if (locked.length > 0) {
+      html += '<div style="margin:16px 0 8px;"><b style="opacity:0.5;">🔒 ألقاب لم تحصل عليها بعد</b></div>';
+      html += '<div style="display:flex;flex-wrap:wrap;gap:8px;justify-content:center;">';
+      locked.forEach(a => {
+        html += `<div style="background:var(--surface); padding:6px 12px; border-radius:20px; font-size:11px; opacity:0.6;">${a.icon} ${a.title}</div>`;
+      });
+      html += '</div>';
+    }
+    container.innerHTML = html;
   }
 
   // ── Routing ────────────────────────────────────────────────
@@ -653,7 +773,14 @@ const App = (() => {
     if (view === "map")  setTimeout(() => ChatooMap.init(), 200);
     if (view === "shop") renderShop();
     if (view === "profile" && state.uid) {
-      FirebaseService.getUser(state.uid).then(u => { if (u) loadProfileStats(u); }).catch(() => {});
+      FirebaseService.getUser(state.uid).then(u => {
+        if (u) {
+          loadProfileStats(u);
+          state.achievements = u.achievements || {};
+          state.titles = u.titles || [];
+          renderProfileAchievements();
+        }
+      }).catch(() => {});
     }
   }
 
@@ -715,7 +842,6 @@ const App = (() => {
     if (!item) return;
 
     if (item.pi) {
-      // Pay with Pi
       PiPayment.pay({
         amount: item.pi, memo: `Chatoo Shop: ${item.name}`,
         metadata: { itemId: id, type: "shop" },
@@ -726,7 +852,6 @@ const App = (() => {
         }
       });
     } else {
-      // Pay with XP
       if (state.xp < item.price) return ChatooUI.toast("رصيد XP غير كافٍ", "warn");
       state.xp -= item.price;
       updateXPUI();
@@ -798,7 +923,68 @@ const App = (() => {
     });
   }
 
-  return { init, route, goHome, updateXPUI, showLoggedInUI, loadProfileStats, renderShop, buyItem, buyNFT, shopTab, claimDaily, copyReferral, logout, openSettings };
+  // ── Floating Venue Bubbles ─────────────────────────────────
+  async function renderFloatingVenues() {
+    let venues = [];
+    try {
+      venues = await FirebaseService.getVenues();
+    } catch (e) {
+      // offline or error, use demo venues
+    }
+
+    if (!venues.length) {
+      venues = [
+        { name: "Café Tunis",      lat: 36.8190, lon: 10.1658, status: "live",   type: "cafe"       },
+        { name: "Haj Mostapha",    lat: 36.8665, lon: 10.1647, status: "active", type: "restaurant" },
+        { name: "Café Bizerte",    lat: 37.2744, lon: 9.8739,  status: "sync",   type: "cafe"       },
+        { name: "Beach Club Hammamet", lat: 36.3985, lon: 10.5732, status: "live", type: "club"    }
+      ];
+    }
+
+    const container = document.getElementById("floating-bubbles");
+    if (!container) return;
+    container.innerHTML = "";
+
+    const typeEmoji = {
+      cafe: "☕",
+      restaurant: "🍽️",
+      club: "🎵",
+      shop: "🛍️"
+    };
+
+    const max = Math.min(venues.length, CHATOO_CONFIG.floatingBubbles.maxBubbles || 8);
+    const shuffled = venues.sort(() => 0.5 - Math.random()).slice(0, max);
+
+    shuffled.forEach((venue) => {
+      const bubble = document.createElement("div");
+      bubble.className = "float-bubble";
+      const emoji = typeEmoji[venue.type] || "📍";
+      bubble.innerHTML = `<span class="bubble-emoji">${emoji}</span><span class="bubble-name">${venue.name.slice(0, 10)}</span>`;
+      
+      // Random positions within safe area
+      const top = 15 + Math.random() * 60;
+      const left = 5 + Math.random() * 80;
+      bubble.style.top = top + "%";
+      bubble.style.left = left + "%";
+
+      const minDur = CHATOO_CONFIG.floatingBubbles.animationDurationRange[0];
+      const maxDur = CHATOO_CONFIG.floatingBubbles.animationDurationRange[1];
+      const duration = minDur + Math.random() * (maxDur - minDur);
+      bubble.style.animationDuration = duration + "s";
+      bubble.style.animationDelay = -(Math.random() * 10) + "s";
+
+      bubble.addEventListener("click", () => {
+        ChatooChat.open(venue.name);
+      });
+
+      container.appendChild(bubble);
+    });
+  }
+
+  // Expose updateXPUI globally for other modules
+  window.updateXPUI = updateXPUI;
+
+  return { init, route, goHome, updateXPUI, showLoggedInUI, loadProfileStats, renderShop, buyItem, buyNFT, shopTab, claimDaily, copyReferral, logout, openSettings, renderFloatingVenues };
 })();
 
 // ── Boot ────────────────────────────────────────────────────
