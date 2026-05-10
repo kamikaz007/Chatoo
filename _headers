@@ -1,0 +1,5 @@
+/*
+  Content-Security-Policy: frame-ancestors 'self' https://*.minepi.com;
+  X-Frame-Options: ALLOW-FROM https://*.minepi.com
+  Access-Control-Allow-Origin: *
+

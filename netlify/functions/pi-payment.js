@@ -3,6 +3,8 @@
  * Server-side Pi Network payment verification
  * Runs on Netlify Edge — API key never exposed to client
  */
+require('dotenv').config();
+const fetch = require('node-fetch');
 
 exports.handler = async (event) => {
   const headers = {
